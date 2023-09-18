@@ -5,6 +5,7 @@
 
         <link rel="stylesheet" href="style.css">
 		<script src="wasm_exec.js"></script>
+        <script src="wasm_extra.js"></script>
 
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.8.2/jquery.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/lz-string@1.4.4/libs/lz-string.min.js"></script>
@@ -38,17 +39,53 @@
                     WebAssembly.instantiate(wasm, go.importObject).then((result) => go.run(result.instance)).catch(reject);
                 });
 
+                const pkg = `pkg/time.a
+pkg/sync.a
+pkg/unicode/utf8.a
+pkg/path.a
+pkg/os.a
+pkg/io/fs.a
+pkg/runtime/internal/sys.a
+pkg/runtime/internal/math.a
+pkg/runtime/internal/atomic.a
+pkg/internal/testlog.a
+pkg/internal/goarch.a
+pkg/internal/fmtsort.a
+pkg/internal/safefilepath.a
+pkg/internal/goexperiment.a
+pkg/internal/unsafeheader.a
+pkg/internal/reflectlite.a
+pkg/internal/godebugs.a
+pkg/internal/itoa.a
+pkg/internal/goos.a
+pkg/internal/cpu.a
+pkg/internal/poll.a
+pkg/internal/bytealg.a
+pkg/internal/abi.a
+pkg/internal/race.a
+pkg/internal/syscall/execenv.a
+pkg/internal/syscall/unix.a
+pkg/internal/coverage/rtcov.a
+pkg/internal/oserror.a
+pkg/errors.a
+pkg/fmt.a
+pkg/math/bits.a
+pkg/runtime.a
+pkg/unicode.a
+pkg/io.a
+pkg/strconv.a
+pkg/math.a
+pkg/reflect.a
+pkg/sync/atomic.a
+pkg/sort.a
+pkg/syscall/js.a
+pkg/syscall.a`.split("\n");
+
                 Promise.all(
-                    [
-                        'prebuilt/runtime.a',
-                        'prebuilt/internal/bytealg.a',
-                        'prebuilt/internal/cpu.a',
-                        'prebuilt/runtime/internal/atomic.a',
-                        'prebuilt/runtime/internal/math.a',
-                        'prebuilt/runtime/internal/sys.a',
-                    ].map((path) => fetch(path)
-                        .then((response) => response.arrayBuffer())
-                        .then((buf) => writeToGoFilesystem(path, new Uint8Array(buf)))
+                    pkg.map((path) => 
+                        fetch(path)
+                            .then((response) => response.arrayBuffer())
+                            .then((buf) => writeToGoFilesystem(path, new Uint8Array(buf)))
                     ).concat(
                         ['compile', 'link', 'gofmt']
                             .map((cmd) => fetch('cmd/' + cmd + '.wasm')
@@ -63,17 +100,15 @@
                     const encoder = new TextEncoder('utf-8');
 
                     writeToGoFilesystem('/importcfg', encoder.encode(
-                        "packagefile runtime=prebuilt/runtime.a"
+                        "packagefile runtime=pkg/runtime.a\n"+
+                        "packagefile fmt=pkg/fmt.a\n"+
+                        "packagefile os=pkg/os.a\n"+
+                        "packagefile syscall/js=pkg/syscall/js.a"
                     ));
 
                     writeToGoFilesystem('/importcfg.link', encoder.encode(
                         "packagefile command-line-arguments=main.a\n" +
-                        "packagefile runtime=prebuilt/runtime.a\n" +
-                        "packagefile internal/bytealg=prebuilt/internal/bytealg.a\n" +
-                        "packagefile internal/cpu=prebuilt/internal/cpu.a\n" +
-                        "packagefile runtime/internal/atomic=prebuilt/runtime/internal/atomic.a\n" +
-                        "packagefile runtime/internal/math=prebuilt/runtime/internal/math.a\n" +
-                        "packagefile runtime/internal/sys=prebuilt/runtime/internal/sys.a"
+                        pkg.map(p => `packagefile ${p.split(".")[0].replace("pkg/", "")}=${p}`).join("\n")
                     ));
 
                     playground({
@@ -103,8 +138,10 @@
                                     });
                                 };
 
+                                console.time('build');
                                 exec(cmds['compile'], ['-p', 'main', '-complete', '-dwarf=false', '-pack', '-importcfg', 'importcfg', 'main.go'])
                                     .then((code) => code || exec(cmds['link'], ['-importcfg', 'importcfg.link', '-buildmode=exe', 'main.a']))
+                                    .then((code) => { console.timeEnd('build'); return code; })
                                     .then((code) => code || exec(readFromGoFilesystem('a.out')))
                                     .then((code) => {
                                         output({
@@ -161,14 +198,23 @@
 				<input type="button" value="Share" id="share">
 				<input type="text" id="shareURL" style="display:none;">
 			</div>
-            <a style="float:right;padding:15px;font-family:sans-serif;" href="https://github.com/ccbrown/wasm-go-playground" target="_blank">github.com/ccbrown/wasm-go-playground</a>
+            <a style="float:right;padding:15px;font-family:sans-serif;" href="https://github.com/progrium/wasm-go-playground" target="_blank">github.com/progrium/wasm-go-playground</a>
 		</div>
 		<div id="wrap">
 			<textarea itemprop="description" id="code" name="code" autocorrect="off" autocomplete="off" autocapitalize="off" spellcheck="false">package main
 
+import (
+    &#34;fmt&#34;
+    &#34;runtime&#34;
+    &#34;syscall/js&#34;
+)
+
 func main() {
-	println(&#34;Hello, WebAssembly playground!&#34;)
+    fmt.Println(&#34;This WASM program was compiled in the browser using&#34;, runtime.Version())
+    
+    js.Global().Get(&#34;console&#34;).Call(&#34;warn&#34;, &#34;Hello world&#34;)
 }
+
 </textarea>
 		</div>
 		<div id="output"></div>
